@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="css/style.css">
+  <title>GVT - EA7 - Kim Feller</title>
+</head>
+<body>
+<h1>EA7 - Z-Buffer Visualisierung </h1>
+<h2>Graphical Visualisation Technologies</h2>
+<p>Kim Lara Feller, Technische Hochschule Lübeck, Matrikelnummer 331177</p>
+<p><b>Hinweise und Referenzen</b><br>
+Mit Hilfe der Pfeiltasten <b>links</b> und <b>rechts</b> kann die Szene rotiert werden.
+  Mit den Taste <b>w</b>, <b>s</b>,<b>a</b>, <b>d</b> kann zudem die Kameraperspektive verändert werden.
+  Die Tiefe (abhängig vom Z-Buffer) wird durch die unterschiedlichen Grauwertstufen visualisiert.
+</p>
+<canvas id="webglCanvas" width="800" height="600"></canvas>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gl-matrix/2.8.1/gl-matrix-min.js"></script>
+<script>
+  const canvas = document.getElementById("webglCanvas");
+  const gl = canvas.getContext("webgl");
+
+  if (!gl) {
+    alert("WebGL wird in Ihrem Browser nicht unterstützt!");
+    throw new Error("WebGL nicht unterstützt");
+  }
+
+  const vertexShaderSource = `
+    attribute vec4 aPosition;
+    uniform mat4 uMatrix;
+    void main() {
+      gl_Position = uMatrix * aPosition;
+    }
+  `;
+
+  const fragmentShaderSource = `
+    precision mediump float;
+    void main() {
+      float depth = gl_FragCoord.z;
+      depth = (depth - 0.1) / (1.0 - 0.1);
+      depth = clamp(depth, 0.0, 1.0);
+      depth = 0.15 + depth * 0.8; // Graustufen von 20% bis 100% für die Sichtbarkeit
+      gl_FragColor = vec4(vec3(depth), 1.0); // Darstellung Graustufen
+    }
+  `;
+
+  function createShader(gl, type, source) {
+    const shader = gl.createShader(type);
+    gl.shaderSource(shader, source);
+    gl.compileShader(shader);
+    if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+      console.error(gl.getShaderInfoLog(shader));
+      gl.deleteShader(shader);
+      throw new Error("Shader-Fehler");
+    }
+    return shader;
+  }
+
+  function createProgram(gl, vertexShader, fragmentShader) {
+    const program = gl.createProgram();
+    gl.attachShader(program, vertexShader);
+    gl.attachShader(program, fragmentShader);
+    gl.linkProgram(program);
+    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+      console.error(gl.getProgramInfoLog(program));
+      gl.deleteProgram(program);
+      throw new Error("Programm-Fehler");
+    }
+    return program;
+  }
+
+  // Würfel
+  function createCube() {
+    return {
+      vertices: new Float32Array([
+        -0.5, -0.5, -0.5,  0.5, -0.5, -0.5,  0.5,  0.5, -0.5, -0.5,  0.5, -0.5,
+        -0.5, -0.5,  0.5,  0.5, -0.5,  0.5,  0.5,  0.5,  0.5, -0.5,  0.5,  0.5
+      ]),
+      indices: new Uint16Array([
+        0, 1, 2,  2, 3, 0, // Rückseite
+        4, 5, 6,  6, 7, 4, // Vorderseite
+        0, 1, 5,  5, 4, 0, // Linke Seite
+        2, 3, 7,  7, 6, 2, // Rechte Seite
+        1, 3, 7,  7, 5, 1, // Oben
+        0, 2, 6,  6, 4, 0  // Unten
+      ])
+    };
+  }
+
+  // Pyramide
+  function createPyramid() {
+    return {
+      vertices: new Float32Array([
+        0.0,  0.5,  0.0,  // Spitze
+        -0.5, -0.5,  0.5,  // Vorderseite links
+        0.5, -0.5,  0.5,  // Vorderseite rechts
+        0.5, -0.5, -0.5,  // Rückseite rechts
+        -0.5, -0.5, -0.5   // Rückseite links
+      ]),
+      indices: new Uint16Array([
+        0, 1, 2,  // Vorderseite
+        0, 2, 3,  // Rechte Seite
+        0, 3, 4,  // Rückseite
+        0, 4, 1,  // Linke Seite
+        1, 2, 3,  3, 4, 1 // Basis
+      ])
+    };
+  }
+
+  // Kugel
+  function createSphere(divisions) {
+    const vertices = [];
+    const indices = [];
+    const step = Math.PI / divisions;
+    for (let i = 0; i <= divisions; i++) {
+      const theta = i * step;
+      for (let j = 0; j <= divisions * 2; j++) {
+        const phi = j * step;
+        const x = Math.sin(theta) * Math.cos(phi);
+        const y = Math.cos(theta);
+        const z = Math.sin(theta) * Math.sin(phi);
+        vertices.push(x, y, z);
+      }
+    }
+    for (let i = 0; i < divisions; i++) {
+      for (let j = 0; j < divisions * 2; j++) {
+        const first = i * (divisions * 2 + 1) + j;
+        const second = first + divisions * 2 + 1;
+        indices.push(first, second, first + 1);
+        indices.push(second, second + 1, first + 1);
+      }
+    }
+    return {
+      vertices: new Float32Array(vertices),
+      indices: new Uint16Array(indices),
+    };
+  }
+
+  const program = createProgram(
+    gl,
+    createShader(gl, gl.VERTEX_SHADER, vertexShaderSource),
+    createShader(gl, gl.FRAGMENT_SHADER, fragmentShaderSource)
+  );
+  gl.useProgram(program);
+
+  const objects = [createCube(), createPyramid(), createSphere(12)];
+  const positions = [[0, 0, 0.5], [1, 0, -1], [-1, 0, -4]]; // verschiedene Z-Koordinatoren für Tiefendarstellung
+
+  const buffers = objects.map((obj) => {
+    const vertexBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, obj.vertices, gl.STATIC_DRAW);
+
+    const indexBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, obj.indices, gl.STATIC_DRAW);
+
+    return { vertexBuffer, indexBuffer, vertexCount: obj.indices.length };
+  });
+
+  const uMatrix = gl.getUniformLocation(program, "uMatrix");
+  const aPosition = gl.getAttribLocation(program, "aPosition");
+  gl.enableVertexAttribArray(aPosition);
+
+  gl.clearColor(1, 1, 1, 1);
+  gl.enable(gl.DEPTH_TEST);
+
+  const projectionMatrix = mat4.perspective(mat4.create(), Math.PI / 4, canvas.width / canvas.height, 0.1, 10);
+  let cameraPosition = [0, 0, 1];
+  let cameraRotationY = 0;
+
+
+  document.addEventListener("keydown", (event) => {
+    const speed = 0.1;
+
+    if (event.key === 'w') {
+      cameraPosition[1] += speed; // Bewegung nach oben
+    }
+    if (event.key === 's') {
+      cameraPosition[1] -= speed; // Bewegung nach unten
+    }
+    if (event.key === 'a') {
+      cameraPosition[0] -= speed; // Bewegung nach links
+    }
+    if (event.key === 'd') {
+      cameraPosition[0] += speed; // Bewegung nach rechts
+    }
+
+    if (event.key === 'ArrowLeft') {
+      cameraRotationY -= 0.05; // Drehung nach links
+    }
+    if (event.key === 'ArrowRight') {
+      cameraRotationY += 0.05; // Drehung nach rechts
+    }
+  });
+
+  function render() {
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+    // Berechnung der Kameramatrix mit fester z-Position
+    const viewMatrix = mat4.lookAt(mat4.create(), [cameraPosition[0], cameraPosition[1], 3], [0, 0, 0], [0, 1, 0]);
+
+    // Rotation der Kamera um die Y-Achse
+    const rotationMatrix = mat4.create();
+    mat4.rotateY(rotationMatrix, rotationMatrix, cameraRotationY);
+
+    // Gesamtmatrix für die Kamera
+    const modelViewMatrix = mat4.multiply(mat4.create(), viewMatrix, rotationMatrix);
+
+    buffers.forEach((buffer, index) => {
+      const modelMatrix = mat4.translate(mat4.create(), mat4.create(), positions[index]);
+      const matrix = mat4.multiply(mat4.create(), projectionMatrix, modelViewMatrix);
+      mat4.multiply(matrix, matrix, modelMatrix);
+
+      gl.uniformMatrix4fv(uMatrix, false, matrix);
+      gl.bindBuffer(gl.ARRAY_BUFFER, buffer.vertexBuffer);
+      gl.vertexAttribPointer(aPosition, 3, gl.FLOAT, false, 0, 0);
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buffer.indexBuffer);
+
+      gl.drawElements(gl.TRIANGLES, buffer.vertexCount, gl.UNSIGNED_SHORT, 0);
+    });
+
+    requestAnimationFrame(render);
+  }
+
+  render();
+</script>
+</body>
+</html>
