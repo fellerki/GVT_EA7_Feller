@@ -145,7 +145,7 @@ Mit Hilfe der Pfeiltasten <b>links</b> und <b>rechts</b> kann die Szene rotiert 
   gl.useProgram(program);
 
   const objects = [createCube(), createPyramid(), createSphere(12)];
-  const positions = [[0, 0, 0.5], [1, 0, -1], [-1, 0, -4]]; // verschiedene Z-Koordinatoren für Tiefendarstellung
+  const positions = [[0, 0, 1], [0.2, 0.2, 0.2], [-1, -0.5, -1.5]]; // verschiedene Z-Koordinatoren für Tiefendarstellung
 
   const buffers = objects.map((obj) => {
     const vertexBuffer = gl.createBuffer();
